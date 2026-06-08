@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.mute-all-mics"
+          path="/org/gnome/shell/extensions/mute-all-mics/">
+
+    <!-- The global shortcut. Type 'as' (array of strings) because
+         Main.wm.addKeybinding / Meta read the binding as a string list, the
+         same as every stock GNOME keybinding key. A single accelerator is
+         stored, e.g. ['<Alt>m']; an empty list disables the shortcut. -->
+    <key name="mute-hotkey" type="as">
+      <default>['&lt;Alt&gt;m']</default>
+      <summary>Mute all microphones shortcut</summary>
+      <description>
+        Keyboard shortcut (GTK accelerator syntax) that toggles mute on every
+        microphone source at once. Empty list disables the shortcut.
+      </description>
+    </key>
+
+    <!-- When true, the extension clears GNOME's built-in mic-mute shortcut
+         (org.gnome.settings-daemon.plugins.media-keys mic-mute) on enable so
+         its own handler owns the combo, and restores it on disable. The stock
+         handler only mutes the default source, which is exactly the behaviour
+         this extension replaces. -->
+    <key name="manage-gsd-mic-mute" type="b">
+      <default>true</default>
+      <summary>Take over the built-in mic-mute shortcut</summary>
+      <description>
+        Clear gnome-settings-daemon's mic-mute shortcut on enable and restore it
+        on disable, so this extension's all-microphones handler is the only thing
+        bound to the combo. Takes effect the next time the extension is enabled.
+      </description>
+    </key>
+
+    <!-- Bookkeeping for the override above; managed by the extension, not by
+         the user. Stores the stock mic-mute value so disable() can restore it,
+         and a flag that survives shell restarts to keep save/restore balanced. -->
+    <key name="saved-gsd-mic-mute" type="as">
+      <default>[]</default>
+      <summary>Saved value of the built-in mic-mute shortcut</summary>
+      <description>
+        Internal: the original gnome-settings-daemon mic-mute value, saved before
+        it was cleared so it can be restored. Do not edit manually.
+      </description>
+    </key>
+
+    <key name="gsd-mic-mute-overridden" type="b">
+      <default>false</default>
+      <summary>Whether the built-in mic-mute shortcut is currently overridden</summary>
+      <description>
+        Internal: true while this extension has cleared the built-in mic-mute
+        shortcut. Persisted so a crash does not unbalance save/restore. Do not
+        edit manually.
+      </description>
+    </key>
+
+  </schema>
+</schemalist>

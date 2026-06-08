@@ -1,0 +1,9 @@
+{
+  "uuid": "mute-all-mics@VitalyOstanin",
+  "name": "Mute All Microphones",
+  "description": "A configurable hotkey that mutes/unmutes every microphone source at once (not just the default), shows the native GNOME microphone OSD, and keeps newly connected microphones muted while mute is active. Takes over GNOME's built-in mic-mute shortcut so a single key silences all inputs during calls.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "settings-schema": "org.gnome.shell.extensions.mute-all-mics",
+  "url": "https://github.com/VitalyOstanin/mute-all-mics",
+  "version-name": "1.0"
+}
