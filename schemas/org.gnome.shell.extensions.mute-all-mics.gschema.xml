@@ -53,5 +53,19 @@
       </description>
     </key>
 
+    <!-- Internal: false until the hotkey has been seeded once. On the very first
+         enable the extension copies the pre-existing GNOME mic-mute combo into
+         mute-hotkey (so it keeps working with the key the user already knew),
+         then sets this true so later sessions never overwrite a user choice. -->
+    <key name="hotkey-initialized" type="b">
+      <default>false</default>
+      <summary>Whether the hotkey has been seeded from the stock shortcut</summary>
+      <description>
+        Internal: set true after the hotkey has been initialised once from the
+        pre-existing gnome-settings-daemon mic-mute shortcut. Do not edit
+        manually.
+      </description>
+    </key>
+
   </schema>
 </schemalist>

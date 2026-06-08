@@ -18,3 +18,4 @@
 | [0008](0008-hotkey-config-text-field.md)                 | Hotkey config: text field now, picker later (superseded) |
 | [0009](0009-hotkey-capture-picker.md)                    | Hotkey config: interactive key-capture picker     |
 | [0010](0010-start-muted-on-enable.md)                    | Start muted on enable                             |
+| [0011](0011-seed-hotkey-from-stock-mic-mute.md)          | Seed the hotkey from the stock mic-mute on first run |

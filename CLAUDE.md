@@ -101,6 +101,14 @@ sets `gsd-mic-mute-overridden`; `disable()` restores it. State lives in our own
 gsettings so it survives shell restarts and keeps save/restore balanced. See
 [docs/ADR/0005](docs/ADR/0005-manage-gsd-mic-mute.md).
 
+On the first enable, `_initHotkeyFromGsd()` (run before `_overrideGsdMicMute`)
+seeds `mute-hotkey` from the pre-existing stock mic-mute combo — read from
+`saved-gsd-mic-mute` if already overridden in a prior session, otherwise from the
+live key before it is cleared — and sets the `hotkey-initialized` flag so later
+sessions never overwrite a user choice (`prefs.js` sets the flag too). The schema
+default `<Alt>m` is only a fallback when GNOME had no mic-mute shortcut. See
+[docs/ADR/0011](docs/ADR/0011-seed-hotkey-from-stock-mic-mute.md).
+
 ## Known API differences across versions
 
 | Aspect                       | GNOME 45-48                                  | GNOME 49-50                          |

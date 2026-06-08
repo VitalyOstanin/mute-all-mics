@@ -69,7 +69,7 @@ Open with `gnome-extensions prefs mute-all-mics@VitalyOstanin`.
 
 | Setting                                                       | Default   | Effect                                                                          |
 | ------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------ |
-| Mute hotkey                                                   | `<Alt>m`  | The shortcut that toggles mute on all microphones. Click to capture, Backspace clears. |
+| Mute hotkey                                                   | GNOME's mic-mute (else `<Alt>m`) | The shortcut that toggles mute on all microphones. Click to capture, Backspace clears. |
 | Disable GNOME's built-in mic-mute while this extension is active | on        | Clear GNOME's stock mic-mute on enable, restore it on disable.                  |
 
 The second option is needed because the stock mic-mute shortcut is bound to the
@@ -90,6 +90,10 @@ hotkey), Escape cancels. A plain letter or digit needs a modifier such as Alt,
 Ctrl or Super; function and media keys may be used on their own. The value is
 stored in GTK accelerator form (for example `<Alt>m`, `<Control><Alt>m`,
 `<Super>m`).
+
+On the first run the hotkey is seeded from GNOME's existing microphone mute
+shortcut, so the extension responds to the key you already used; `<Alt>m` is only
+the fallback if GNOME had no mic-mute shortcut. After that, your choice is kept.
 
 ## How it works
 

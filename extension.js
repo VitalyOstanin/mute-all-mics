@@ -24,6 +24,10 @@ const MANAGE_GSD_KEY = "manage-gsd-mic-mute";
 const GSD_OVERRIDDEN_KEY = "gsd-mic-mute-overridden";
 const SAVED_GSD_KEY = "saved-gsd-mic-mute";
 
+// gschema flag: set once the hotkey has been seeded from the pre-existing GNOME
+// mic-mute shortcut, so later sessions never overwrite a user-chosen value.
+const HOTKEY_INIT_KEY = "hotkey-initialized";
+
 // Microphone icon set, matching GNOME's own input slider
 // (js/ui/status/volume.js), so the OSD is visually identical to the stock one.
 // Index 0 is shown when muted or at zero volume; 1-3 by volume level.
@@ -61,6 +65,12 @@ export default class MuteAllMicsExtension extends Extension {
     this._subscribeProc = null;
     this._subscribeStream = null;
     this._rebindTimeoutId = 0;
+
+    // On the very first run, adopt whatever mic-mute shortcut GNOME already had,
+    // so the extension keeps working with the key the user already knew, instead
+    // of forcing the schema default. Must run before _overrideGsdMicMute clears
+    // the stock key.
+    this._initHotkeyFromGsd();
 
     // Take over the mic-mute combo from gnome-settings-daemon so only our
     // all-sources handler is bound to it. Returns true if it actually cleared a
@@ -361,6 +371,31 @@ export default class MuteAllMicsExtension extends Extension {
     const source = Gio.SettingsSchemaSource.get_default();
     if (!source || !source.lookup(MEDIA_KEYS_SCHEMA, true)) return null;
     return new Gio.Settings({ schema_id: MEDIA_KEYS_SCHEMA });
+  }
+
+  // Seed mute-hotkey from the pre-existing GNOME mic-mute shortcut, once. After
+  // this the user's own choice (set in prefs) is never overwritten.
+  _initHotkeyFromGsd() {
+    if (this._settings.get_boolean(HOTKEY_INIT_KEY)) return;
+
+    // The pre-existing combo: if we already took it over in a previous session
+    // it lives in saved-gsd-mic-mute; otherwise read the stock key live, before
+    // _overrideGsdMicMute clears it.
+    let original;
+    if (this._settings.get_boolean(GSD_OVERRIDDEN_KEY)) {
+      original = this._settings.get_strv(SAVED_GSD_KEY);
+    } else {
+      const gsd = this._getMediaKeysSettings();
+      original = gsd ? gsd.get_strv(MEDIA_KEYS_MIC_MUTE) : [];
+    }
+
+    // Only adopt a real binding; if GNOME had no mic-mute shortcut, keep the
+    // schema default (a usable fallback rather than no shortcut at all).
+    if (original.length > 0) {
+      this._settings.set_strv(MUTE_HOTKEY_KEY, original);
+      this._debug(`seeded hotkey from gsd: ${JSON.stringify(original)}`);
+    }
+    this._settings.set_boolean(HOTKEY_INIT_KEY, true);
   }
 
   // Clear the stock mic-mute shortcut. Returns true if a non-empty binding was

@@ -93,6 +93,9 @@ const ShortcutRow = GObject.registerClass(
 
     _store(accel) {
       this._settings.set_strv(this._key, accel ? [accel] : []);
+      // Mark the hotkey as user-initialised so the first enable() never seeds it
+      // from GNOME's stock mic-mute over an explicit choice (incl. clearing).
+      this._settings.set_boolean("hotkey-initialized", true);
       // _syncFromSettings runs via the changed:: handler.
     }
 
