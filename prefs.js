@@ -8,16 +8,12 @@ import Gtk from "gi://Gtk";
 import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js";
 
 // An Adw.ActionRow that captures a single keyboard shortcut interactively, like
-// the picker in GNOME Settings. Built programmatically (no .ui template) to match
-// the rest of these prefs.
-//
-// _isBindingValid and _isKeyvalForbidden are the GNOME Settings validation rules,
-// taken from the night-theme-switcher extension (via tiling-assistant):
+// the picker in GNOME Settings. _isBindingValid and _isKeyvalForbidden are the
+// GNOME Settings validation rules, taken from the night-theme-switcher extension:
 // https://gitlab.com/rmnvgr/nightthemeswitcher-gnome-shell-extension
 const ShortcutRow = GObject.registerClass(
   class MuteAllMicsShortcutRow extends Adw.ActionRow {
-    // Only one row may listen at a time. With a single row this is trivially
-    // true, but the guard keeps the key handler correct if more rows are added.
+    // Only one row may listen at a time.
     static _listener = null;
 
     _init(settings, key, params = {}) {
@@ -28,7 +24,6 @@ const ShortcutRow = GObject.registerClass(
       this._baseSubtitle = this.get_subtitle() ?? "";
       this._listening = false;
 
-      // Current shortcut, shown the same way GNOME Settings shows it.
       this._shortcutLabel = new Gtk.ShortcutLabel({
         valign: Gtk.Align.CENTER,
         disabled_text: "Disabled",
@@ -50,8 +45,8 @@ const ShortcutRow = GObject.registerClass(
       this.set_activatable(true);
       this.connect("activated", () => this._toggleListening());
 
-      // The key controller lives on the window root and runs in the capture
-      // phase so it sees the combination before focused widgets consume it.
+      // Runs in the capture phase so it sees the combination before focused
+      // widgets consume it.
       this._keyController = new Gtk.EventControllerKey();
       this._keyController.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);
       this._keyController.connect("key-pressed", this._onKeyPressed.bind(this));
@@ -74,8 +69,7 @@ const ShortcutRow = GObject.registerClass(
           this._settings.disconnect(this._settingsChangedId);
           this._settingsChangedId = 0;
         }
-        // Detach the key controller from the window root so it does not outlive
-        // the row (the root can outlive the row when the prefs page is rebuilt).
+        // The window root can outlive the row when the prefs page is rebuilt.
         if (this._controllerRoot) {
           this._controllerRoot.remove_controller(this._keyController);
           this._controllerRoot = null;
@@ -93,10 +87,9 @@ const ShortcutRow = GObject.registerClass(
 
     _store(accel) {
       this._settings.set_strv(this._key, accel ? [accel] : []);
-      // Mark the hotkey as user-initialised so the first enable() never seeds it
-      // from GNOME's stock mic-mute over an explicit choice (incl. clearing).
+      // Mark as user-initialised so the first enable() never seeds it from
+      // GNOME's stock mic-mute over an explicit choice (incl. clearing).
       this._settings.set_boolean("hotkey-initialized", true);
-      // _syncFromSettings runs via the changed:: handler.
     }
 
     _toggleListening() {
@@ -143,8 +136,7 @@ const ShortcutRow = GObject.registerClass(
         }
       }
 
-      // Ignore modifier-only presses and invalid combinations; keep listening so
-      // the user can complete the chord.
+      // Ignore modifier-only presses and invalid combinations; keep listening.
       if (
         !this._isBindingValid({ mask, keycode, keyval }) ||
         !Gtk.accelerator_valid(keyval, mask)
@@ -162,9 +154,8 @@ const ShortcutRow = GObject.registerClass(
       return Gdk.EVENT_STOP;
     }
 
-    // A combination is valid unless it is a bare letter/digit/script character
-    // (or a forbidden navigation key) with no modifier beyond Shift — those must
-    // not become a shortcut because they would swallow ordinary typing.
+    // Reject a bare letter/digit/script character (or a forbidden navigation
+    // key) with no modifier beyond Shift — it would swallow ordinary typing.
     _isBindingValid({ mask, keycode, keyval }) {
       if ((mask === 0 || mask === Gdk.ModifierType.SHIFT_MASK) && keycode !== 0) {
         if (

@@ -7,44 +7,29 @@ import Shell from "gi://Shell";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 
-// Flip to true to get verbose journal logging during development.
 const DEBUG = false;
 
-// gnome-settings-daemon schema whose mic-mute shortcut we take over. Its stock
-// handler toggles only the default source, which is the behaviour this extension
-// replaces with an all-sources toggle.
 const MEDIA_KEYS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys";
 const MEDIA_KEYS_MIC_MUTE = "mic-mute";
 
-// gschema key holding our configurable global shortcut (type 'as').
 const MUTE_HOTKEY_KEY = "mute-hotkey";
 
-// gschema keys for the gnome-settings-daemon mic-mute override bookkeeping.
 const MANAGE_GSD_KEY = "manage-gsd-mic-mute";
 const GSD_OVERRIDDEN_KEY = "gsd-mic-mute-overridden";
 const SAVED_GSD_KEY = "saved-gsd-mic-mute";
-
-// gschema flag: set once the hotkey has been seeded from the pre-existing GNOME
-// mic-mute shortcut, so later sessions never overwrite a user-chosen value.
 const HOTKEY_INIT_KEY = "hotkey-initialized";
 
-// Microphone icon set, matching GNOME's own input slider
-// (js/ui/status/volume.js), so the OSD is visually identical to the stock one.
-// Index 0 is shown when muted or at zero volume; 1-3 by volume level.
+// Mirrors GNOME's input slider (js/ui/status/volume.js): index 0 is muted/zero,
+// 1-3 by volume level, so the OSD matches the stock one.
 const MIC_ICONS = [
   "microphone-sensitivity-muted-symbolic",
   "microphone-sensitivity-low-symbolic",
   "microphone-sensitivity-medium-symbolic",
   "microphone-sensitivity-high-symbolic",
 ];
-
-// Number of non-muted volume levels (low/medium/high) the icon set encodes;
-// index 0 is the muted icon, indices 1..MIC_LEVEL_COUNT are the volume buckets.
 const MIC_LEVEL_COUNT = MIC_ICONS.length - 1;
 
-// Delay before re-asserting the keybinding after we clear gnome-settings-daemon's
-// mic-mute on the very first enable. gsd releases its accelerator grab
-// asynchronously; re-registering once it has lets mutter index our binding.
+// gsd releases its accelerator grab asynchronously; wait before re-asserting.
 const REBIND_DELAY_MS = 800;
 
 export default class MuteAllMicsExtension extends Extension {
@@ -54,35 +39,24 @@ export default class MuteAllMicsExtension extends Extension {
 
   enable() {
     this._settings = this.getSettings();
-    // Desired global mute state. The extension starts MUTED: on every login the
-    // microphones must be off until the user deliberately unmutes with the
-    // hotkey. Also the source of truth when a microphone is hot-plugged while
-    // mute is active.
+    // Start MUTED: microphones stay off after every login until the user
+    // unmutes. Also the source of truth when a mic is hot-plugged.
     this._muted = true;
-    // One cancellable for every async pactl call and the subscribe read loop, so
-    // disable() can tear all of them down at once.
     this._cancellable = new Gio.Cancellable();
     this._subscribeProc = null;
     this._subscribeStream = null;
     this._rebindTimeoutId = 0;
 
-    // On the very first run, adopt whatever mic-mute shortcut GNOME already had,
-    // so the extension keeps working with the key the user already knew, instead
-    // of forcing the schema default. Must run before _overrideGsdMicMute clears
-    // the stock key.
+    // Must run before _overrideGsdMicMute clears the stock key.
     this._initHotkeyFromGsd();
 
-    // Take over the mic-mute combo from gnome-settings-daemon so only our
-    // all-sources handler is bound to it. Returns true if it actually cleared a
-    // non-empty stock binding in this call (the only case with a grab race).
+    // Returns true only when it actually cleared a non-empty stock binding.
     const cleared = this._overrideGsdMicMute();
 
     this._registerKeybinding();
 
-    // On the first enable gsd had grabbed the combo; it ungrabs asynchronously
-    // after we cleared its key, so re-assert our binding shortly after to win the
-    // accelerator once gsd has let go. On later sessions the stock key is already
-    // empty, so this branch does not run.
+    // gsd had grabbed the combo and ungrabs asynchronously after we cleared its
+    // key, so re-assert our binding once it has let go.
     if (cleared) {
       this._rebindTimeoutId = GLib.timeout_add(
         GLib.PRIORITY_DEFAULT,
@@ -97,12 +71,8 @@ export default class MuteAllMicsExtension extends Extension {
       );
     }
 
-    // Watch for newly added sources so a microphone plugged in or reconnected
-    // while mute is active gets muted too.
     this._startSourceWatch();
 
-    // Enforce the muted-at-startup state on the actual sources so the real
-    // hardware matches this._muted === true right after login.
     this._applyMuteToAll(true).catch((e) =>
       logError(e, "[mute-all-mics] initial mute failed"),
     );
@@ -115,7 +85,6 @@ export default class MuteAllMicsExtension extends Extension {
       this._rebindTimeoutId = 0;
     }
 
-    // Always attempt to remove the keybinding; it is a no-op if absent.
     Main.wm.removeKeybinding(MUTE_HOTKEY_KEY);
 
     this._stopSourceWatch();
@@ -125,8 +94,7 @@ export default class MuteAllMicsExtension extends Extension {
       this._cancellable = null;
     }
 
-    // Restore gnome-settings-daemon's mic-mute shortcut before releasing
-    // settings (the restore reads our own keys).
+    // Restore before releasing settings (the restore reads our own keys).
     this._restoreGsdMicMute();
 
     this._muted = false;
@@ -134,9 +102,6 @@ export default class MuteAllMicsExtension extends Extension {
   }
 
   _registerKeybinding() {
-    // Meta re-reads the gsettings key whenever it changes, so editing the hotkey
-    // in prefs applies live without a manual re-bind. IGNORE_AUTOREPEAT avoids
-    // rapid toggling if the key repeats.
     const action = Main.wm.addKeybinding(
       MUTE_HOTKEY_KEY,
       this._settings,
@@ -171,9 +136,6 @@ export default class MuteAllMicsExtension extends Extension {
     );
   }
 
-  // Set the mute state on every real microphone source. Monitor sources (output
-  // loopbacks, name ending in .monitor) are skipped. Idempotent: re-running it
-  // with the same target leaves already-correct sources untouched in practice.
   async _applyMuteToAll(muted) {
     const sources = await this._listRealSources();
     this._debug(`applyMute(${muted}) sources=${JSON.stringify(sources)}`);
@@ -182,8 +144,7 @@ export default class MuteAllMicsExtension extends Extension {
       const r = await this._runPactl(["set-source-mute", name, muted ? "1" : "0"]);
       if (r === null) failed++;
     }
-    // _runPactl logs each individual failure; surface an aggregate so a partial
-    // failure (some sources left in the wrong state) is not silently lost.
+    // Surface an aggregate so a partial failure is not silently lost.
     if (failed > 0)
       logError(
         new Error(`failed to mute ${failed}/${sources.length} source(s)`),
@@ -191,8 +152,6 @@ export default class MuteAllMicsExtension extends Extension {
       );
   }
 
-  // Return the names of all input sources that are real microphones, excluding
-  // monitor sources. Names (not indices) are used because they are stable.
   async _listRealSources() {
     const out = await this._runPactl(["list", "short", "sources"]);
     if (!out) return [];
@@ -201,13 +160,13 @@ export default class MuteAllMicsExtension extends Extension {
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
       const name = line.split("\t")[1];
+      // Skip monitor sources (output loopbacks); names are stable, indices not.
       if (name && !name.includes(".monitor")) names.push(name);
     }
     return names;
   }
 
-  // Run `pactl <argv>` and resolve with its stdout (or null on failure). Never
-  // rejects, so callers do not need their own error handling for spawn issues.
+  // Resolves with pactl's stdout, or null on failure. Never rejects.
   _runPactl(argv) {
     return new Promise((resolve) => {
       let proc;
@@ -233,8 +192,6 @@ export default class MuteAllMicsExtension extends Extension {
               ),
               "[mute-all-mics]",
             );
-            // Treat a non-zero exit as failure so callers can tell it apart from
-            // a successful command with empty output.
             resolve(null);
             return;
           }
@@ -250,22 +207,15 @@ export default class MuteAllMicsExtension extends Extension {
 
   // --- OSD -----------------------------------------------------------------
 
-  // Show the native GNOME OSD. Because this runs inside the gnome-shell process,
-  // it calls Main.osdWindowManager directly, which is not subject to the D-Bus
-  // sender allow-list that guards org.gnome.Shell.ShowOSD for external callers.
-  //
-  // To match the stock microphone OSD exactly (js/ui/status/volume.js), the level
-  // bar reflects the default source volume and the icon is chosen by mute state
-  // and volume level. If the volume cannot be read, fall back to icon-only.
+  // Calls Main.osdWindowManager directly (in-process), so it is not subject to
+  // the D-Bus sender allow-list that guards org.gnome.Shell.ShowOSD.
   async _showOsd(muted) {
     const level = await this._getDefaultSourceLevel(); // 0..1, or null
     const icon = new Gio.ThemedIcon({ name: this._iconForState(muted, level) });
 
-    // API change across supported versions, detected by capability rather than
-    // version number: showAll(icon, label, level, maxLevel) exists since GNOME
-    // 49; on GNOME 45-48 the call is show(monitorIndex, icon, label, level,
-    // maxLevel) with monitorIndex -1 meaning all monitors.
-    const osdLevel = level ?? null; // null hides the bar (fallback only)
+    // showAll(icon, label, level, maxLevel) since GNOME 49; on 45-48 it is
+    // show(monitorIndex, ...) with monitorIndex -1 meaning all monitors.
+    const osdLevel = level ?? null;
     const maxLevel = level === null ? -1 : 1;
 
     const mgr = Main.osdWindowManager;
@@ -274,8 +224,6 @@ export default class MuteAllMicsExtension extends Extension {
     else mgr.show(-1, icon, null, osdLevel, maxLevel);
   }
 
-  // Mirror StreamSlider.getIcon(): muted or zero volume -> muted icon, otherwise
-  // one of low/medium/high by volume.
   _iconForState(muted, level) {
     if (muted || level === null || level <= 0) return MIC_ICONS[0];
     let n = Math.ceil(MIC_LEVEL_COUNT * level);
@@ -283,8 +231,6 @@ export default class MuteAllMicsExtension extends Extension {
     return MIC_ICONS[n];
   }
 
-  // Read the default source volume as a 0..1 fraction (1.0 == 100%), or null if
-  // it cannot be determined. Parses `pactl get-source-volume @DEFAULT_SOURCE@`.
   async _getDefaultSourceLevel() {
     const out = await this._runPactl([
       "get-source-volume",
@@ -292,8 +238,7 @@ export default class MuteAllMicsExtension extends Extension {
     ]);
     if (!out) return null;
 
-    // A stereo (or multi-channel) source prints one percentage per channel; take
-    // the loudest so the bar matches what GNOME shows for an unbalanced source.
+    // A multi-channel source prints one percentage per channel; take the loudest.
     const matches = [...out.matchAll(/(\d+)%/g)];
     if (!matches.length) return null;
     const pct = Math.max(...matches.map((mm) => parseInt(mm[1], 10)));
@@ -302,8 +247,7 @@ export default class MuteAllMicsExtension extends Extension {
 
   // --- Hot-plug watch ------------------------------------------------------
 
-  // Follow `pactl subscribe` so a microphone added while mute is active is muted
-  // too. Only 'new' source events are acted on: reacting to 'change' would loop,
+  // Only 'new' source events are acted on: reacting to 'change' would loop,
   // because our own set-source-mute emits 'change' events.
   _startSourceWatch() {
     try {
@@ -334,7 +278,7 @@ export default class MuteAllMicsExtension extends Extension {
         return;
       }
 
-      if (line === null) return; // EOF: the subprocess exited.
+      if (line === null) return; // EOF
       this._handleEvent(line);
       this._readNextEvent(stream);
     });
@@ -356,7 +300,7 @@ export default class MuteAllMicsExtension extends Extension {
       try {
         this._subscribeProc.force_exit();
       } catch {
-        // Already gone; nothing to do.
+        // Already gone.
       }
       this._subscribeProc = null;
     }
@@ -365,22 +309,19 @@ export default class MuteAllMicsExtension extends Extension {
 
   // --- gnome-settings-daemon mic-mute override -----------------------------
 
-  // Returns a Gio.Settings for the media-keys schema, or null if the schema is
-  // not installed (defensive: the extension still works without the override).
+  // Returns null if the schema is not installed (the extension still works).
   _getMediaKeysSettings() {
     const source = Gio.SettingsSchemaSource.get_default();
     if (!source || !source.lookup(MEDIA_KEYS_SCHEMA, true)) return null;
     return new Gio.Settings({ schema_id: MEDIA_KEYS_SCHEMA });
   }
 
-  // Seed mute-hotkey from the pre-existing GNOME mic-mute shortcut, once. After
-  // this the user's own choice (set in prefs) is never overwritten.
+  // Seed mute-hotkey from the pre-existing GNOME mic-mute shortcut, once.
   _initHotkeyFromGsd() {
     if (this._settings.get_boolean(HOTKEY_INIT_KEY)) return;
 
-    // The pre-existing combo: if we already took it over in a previous session
-    // it lives in saved-gsd-mic-mute; otherwise read the stock key live, before
-    // _overrideGsdMicMute clears it.
+    // If we already took it over in a previous session it lives in saved-gsd;
+    // otherwise read the stock key live, before _overrideGsdMicMute clears it.
     let original;
     if (this._settings.get_boolean(GSD_OVERRIDDEN_KEY)) {
       original = this._settings.get_strv(SAVED_GSD_KEY);
@@ -389,8 +330,7 @@ export default class MuteAllMicsExtension extends Extension {
       original = gsd ? gsd.get_strv(MEDIA_KEYS_MIC_MUTE) : [];
     }
 
-    // Only adopt a real binding; if GNOME had no mic-mute shortcut, keep the
-    // schema default (a usable fallback rather than no shortcut at all).
+    // Only adopt a real binding; otherwise keep the schema default.
     if (original.length > 0) {
       this._settings.set_strv(MUTE_HOTKEY_KEY, original);
       this._debug(`seeded hotkey from gsd: ${JSON.stringify(original)}`);
@@ -407,9 +347,8 @@ export default class MuteAllMicsExtension extends Extension {
     const gsd = this._getMediaKeysSettings();
     if (!gsd) return false;
 
-    // Save the current value, then clear the stock shortcut. The saved value and
-    // the flag live in our own gsettings, so they survive a shell restart and a
-    // later disable() can still restore the original binding.
+    // Saved value and flag live in our own gsettings, so they survive a shell
+    // restart and a later disable() can still restore the original binding.
     const current = gsd.get_strv(MEDIA_KEYS_MIC_MUTE);
     this._settings.set_strv(SAVED_GSD_KEY, current);
     gsd.set_strv(MEDIA_KEYS_MIC_MUTE, []);
@@ -425,10 +364,8 @@ export default class MuteAllMicsExtension extends Extension {
 
     const gsd = this._getMediaKeysSettings();
     if (gsd) {
-      // Only restore the saved binding if the key is still empty (what we left
-      // it). If it is non-empty, the user re-bound mic-mute themselves after we
-      // cleared it (e.g. following a shell crash with no disable()), so keep
-      // their value instead of clobbering it with our stale saved one.
+      // Restore only if the key is still empty (what we left it). If the user
+      // re-bound mic-mute themselves, keep their value instead of clobbering it.
       const current = gsd.get_strv(MEDIA_KEYS_MIC_MUTE);
       if (current.length === 0)
         gsd.set_strv(MEDIA_KEYS_MIC_MUTE, this._settings.get_strv(SAVED_GSD_KEY));
