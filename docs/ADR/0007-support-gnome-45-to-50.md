@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by [0012](0012-support-gnome-45-to-51.md).
 
 ## Context
 

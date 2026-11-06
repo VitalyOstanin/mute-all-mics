@@ -43,7 +43,7 @@ no built-in "mute all microphones" feature in PipeWire/WirePlumber or GNOME.
 
 ## Requirements
 
-- GNOME Shell 45-50.
+- GNOME Shell 45-51.
 - `pactl` (from `pulseaudio-utils` / `pipewire-pulse`). The extension shells out
   to `pactl` to enumerate and mute sources and to follow device changes.
 
@@ -113,7 +113,7 @@ The rationale for each of these choices is recorded in [docs/ADR](docs/ADR).
 
 ## Compatibility
 
-`metadata.json` declares `shell-version` 45 through 50. The OSD call differs
+`metadata.json` declares `shell-version` 45 through 51. The OSD call differs
 across versions and is selected by capability detection: `showAll(...)` since
 GNOME 49, `show(-1, ...)` on GNOME 45-48.
 

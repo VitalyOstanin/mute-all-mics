@@ -5,7 +5,7 @@ Guidance for AI agents and contributors working on this extension.
 ## Table of Contents
 
 - [Project overview](#project-overview)
-- [Hard constraint: GNOME 45-50](#hard-constraint-gnome-45-50)
+- [Hard constraint: GNOME 45-51](#hard-constraint-gnome-45-51)
 - [API surface used](#api-surface-used)
 - [Mute model](#mute-model)
 - [OSD model](#osd-model)
@@ -27,9 +27,9 @@ rationale for each approach is recorded in [docs/ADR](docs/ADR). Read the ADRs
 before changing how muting, the OSD, the hot-plug watch, or the
 gnome-settings-daemon override work.
 
-## Hard constraint: GNOME 45-50
+## Hard constraint: GNOME 45-51
 
-`metadata.json` declares `shell-version` 45 through 50. Every change MUST keep
+`metadata.json` declares `shell-version` 45 through 51. Every change MUST keep
 the extension working across all of them. GNOME's API is not stable across major
 versions, so any Meta/Shell/Clutter/St/Main symbol must be verified against each
 declared version. Do not assume a symbol exists because it works on the locally
@@ -40,7 +40,7 @@ installed version. Prefer capability detection over version-number branching.
 | Symbol                                              | Source       | Notes                                                            |
 | --------------------------------------------------- | ------------ | ---------------------------------------------------------------- |
 | `Extension`, `getSettings()`                        | gnome-shell  | `js/extensions/extension.js`, since 45                           |
-| `Main.wm.addKeybinding` / `removeKeybinding`        | gnome-shell  | `js/ui/windowManager.js`, signature stable 45-50                 |
+| `Main.wm.addKeybinding` / `removeKeybinding`        | gnome-shell  | `js/ui/windowManager.js`, signature stable 45-51                 |
 | `Meta.KeyBindingFlags.IGNORE_AUTOREPEAT`            | mutter       | flag for the keybinding                                          |
 | `Shell.ActionMode.ALL`                              | gnome-shell  | the shortcut works in every mode                                |
 | `Main.osdWindowManager.showAll` / `.show`           | gnome-shell  | `showAll(icon,label,level,maxLevel)` since 49; `show(-1, …)` 45-48 |
