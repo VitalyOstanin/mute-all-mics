@@ -21,7 +21,7 @@ const ShortcutRow = GObject.registerClass(
 
       this._settings = settings;
       this._key = key;
-      this._baseSubtitle = this.get_subtitle() ?? "";
+      this._baseSubtitle = this.get_subtitle();
       this._listening = false;
 
       this._shortcutLabel = new Gtk.ShortcutLabel({
@@ -52,11 +52,8 @@ const ShortcutRow = GObject.registerClass(
       this._keyController.connect("key-pressed", this._onKeyPressed.bind(this));
       this._controllerRoot = null;
       this.connect("realize", () => {
-        const root = this.get_root();
-        if (root) {
-          root.add_controller(this._keyController);
-          this._controllerRoot = root;
-        }
+        this._controllerRoot = this.get_root();
+        this._controllerRoot.add_controller(this._keyController);
       });
 
       this._syncFromSettings();
@@ -65,10 +62,7 @@ const ShortcutRow = GObject.registerClass(
         () => this._syncFromSettings(),
       );
       this.connect("destroy", () => {
-        if (this._settingsChangedId) {
-          this._settings.disconnect(this._settingsChangedId);
-          this._settingsChangedId = 0;
-        }
+        this._settings.disconnect(this._settingsChangedId);
         // The window root can outlive the row when the prefs page is rebuilt.
         if (this._controllerRoot) {
           this._controllerRoot.remove_controller(this._keyController);

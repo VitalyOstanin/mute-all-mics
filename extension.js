@@ -89,10 +89,8 @@ export default class MuteAllMicsExtension extends Extension {
 
     this._stopSourceWatch();
 
-    if (this._cancellable) {
-      this._cancellable.cancel();
-      this._cancellable = null;
-    }
+    this._cancellable.cancel();
+    this._cancellable = null;
 
     // Restore before releasing settings (the restore reads our own keys).
     this._restoreGsdMicMute();
@@ -216,16 +214,16 @@ export default class MuteAllMicsExtension extends Extension {
           if (status !== 0) {
             logError(
               new Error(
-                `pactl ${argv.join(" ")} exit=${status}: ${(stderr ?? "").trim()}`,
+                `pactl ${argv.join(" ")} exit=${status}: ${stderr.trim()}`,
               ),
               "[mute-all-mics]",
             );
             resolve(null);
             return;
           }
-          resolve(stdout ?? "");
+          resolve(stdout);
         } catch (e) {
-          if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+          if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
             logError(e, "[mute-all-mics] pactl call failed");
           resolve(null);
         }
@@ -243,13 +241,12 @@ export default class MuteAllMicsExtension extends Extension {
 
     // showAll(icon, label, level, maxLevel) since GNOME 49; on 45-48 it is
     // show(monitorIndex, ...) with monitorIndex -1 meaning all monitors.
-    const osdLevel = level ?? null;
     const maxLevel = level === null ? -1 : 1;
 
     const mgr = Main.osdWindowManager;
     if (typeof mgr.showAll === "function")
-      mgr.showAll(icon, null, osdLevel, maxLevel);
-    else mgr.show(-1, icon, null, osdLevel, maxLevel);
+      mgr.showAll(icon, null, level, maxLevel);
+    else mgr.show(-1, icon, null, level, maxLevel);
   }
 
   _iconForState(muted, level) {
@@ -285,7 +282,6 @@ export default class MuteAllMicsExtension extends Extension {
       );
     } catch (e) {
       logError(e, "[mute-all-mics] cannot start pactl subscribe");
-      this._subscribeProc = null;
       return;
     }
 
@@ -301,7 +297,7 @@ export default class MuteAllMicsExtension extends Extension {
       try {
         [line] = s.read_line_finish_utf8(res);
       } catch (e) {
-        if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+        if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
           logError(e, "[mute-all-mics] subscribe read failed");
         return;
       }
@@ -348,7 +344,7 @@ export default class MuteAllMicsExtension extends Extension {
   // Returns null if the schema is not installed (the extension still works).
   _getMediaKeysSettings() {
     const source = Gio.SettingsSchemaSource.get_default();
-    if (!source || !source.lookup(MEDIA_KEYS_SCHEMA, true)) return null;
+    if (!source.lookup(MEDIA_KEYS_SCHEMA, true)) return null;
     return new Gio.Settings({ schema_id: MEDIA_KEYS_SCHEMA });
   }
 
@@ -395,7 +391,6 @@ export default class MuteAllMicsExtension extends Extension {
   }
 
   _restoreGsdMicMute() {
-    if (!this._settings) return;
     if (!this._settings.get_boolean(GSD_OVERRIDDEN_KEY)) return;
 
     const gsd = this._getMediaKeysSettings();
