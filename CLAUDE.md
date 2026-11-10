@@ -44,7 +44,7 @@ installed version. Prefer capability detection over version-number branching.
 | `Meta.KeyBindingFlags.IGNORE_AUTOREPEAT`            | mutter       | flag for the keybinding                                          |
 | `Shell.ActionMode.ALL`                              | gnome-shell  | the shortcut works in every mode                                |
 | `Main.osdWindowManager.showAll` / `.show`           | gnome-shell  | `showAll(icon,label,level,maxLevel)` since 49; `show(-1, …)` 45-48 |
-| `Gio.Subprocess`, `Gio.DataInputStream`             | gio          | spawning `pactl`; `read_line_finish_utf8` for the subscribe loop |
+| `Gio.SubprocessLauncher`, `Gio.Subprocess`, `Gio.DataInputStream` | gio | `pactl` with `LC_ALL=C`; `read_line_finish_utf8` for the subscribe loop |
 | `Gio.Settings` (media-keys schema)                  | gio          | override / restore the stock mic-mute key                        |
 | `Adw.ActionRow`, `Adw.SwitchRow`                    | libadwaita   | prefs; `SwitchRow` since libadwaita 1.4 (GNOME 45)              |
 | `Gtk.EventControllerKey`, `Gtk.ShortcutLabel`       | gtk4         | interactive hotkey capture row in prefs                        |
@@ -63,8 +63,13 @@ has no vendored Gvc source to verify monitor-source handling against, while the
   `.monitor` are skipped (those are output loopbacks, not microphones);
 - each remaining source gets `pactl set-source-mute <name> 1|0` (names, not
   indices, because names are stable);
-- the desired state is held in `this._muted` (runtime only), which is also the
-  source of truth for the hot-plug watch;
+- the hotkey reads the actual state first (`pactl get-source-mute <name>` per
+  source, run with `LC_ALL=C`): any unmuted source means "mute all", only all
+  muted means "unmute all"; other programs change mute too, so an internal flag
+  alone goes stale (see
+  [docs/ADR/0013](docs/ADR/0013-toggle-from-actual-source-state.md));
+- `this._muted` (runtime only) is the last known state, used only when no source
+  state can be read;
 - `enable()` starts muted: `this._muted = true` and an initial `_applyMuteToAll(true)`,
   so all microphones are off after every login until deliberately unmuted (see
   [docs/ADR/0010](docs/ADR/0010-start-muted-on-enable.md)).
@@ -86,9 +91,11 @@ cannot be read is `level=null` passed, which hides the bar (icon-only fallback).
 
 `pactl subscribe` is followed via a long-lived `Gio.Subprocess`; its stdout is
 read line by line with `Gio.DataInputStream.read_line_finish_utf8`. Only `new`
-source events are acted on (when `this._muted`): reacting to `change` would loop,
-because our own `set-source-mute` emits `change` events. See
-[docs/ADR/0004](docs/ADR/0004-hotplug-via-pactl-subscribe.md).
+source events are acted on: the new source is muted when all other real sources
+are muted (without others, `this._muted` decides). Reacting to `change` would
+loop, because our own `set-source-mute` emits `change` events. See
+[docs/ADR/0004](docs/ADR/0004-hotplug-via-pactl-subscribe.md) and
+[docs/ADR/0013](docs/ADR/0013-toggle-from-actual-source-state.md).
 
 ## gnome-settings-daemon mic-mute override
 
@@ -221,15 +228,18 @@ glib-compile-schemas schemas/
 5. With at least two microphones present, press the hotkey; confirm it flips
    **all** of them together and that the OSD shows the microphone icon with the
    volume scale. Press again to toggle back.
-6. With mute active, connect another microphone (e.g. a Bluetooth headset);
+6. Unmute only the default source from outside
+   (`pactl set-source-mute @DEFAULT_SOURCE@ 0`); one press must mute all
+   microphones, the next one unmute all.
+7. With mute active, connect another microphone (e.g. a Bluetooth headset);
    confirm it comes up muted.
-7. Confirm the stock mic-mute was cleared: `gsettings get
+8. Confirm the stock mic-mute was cleared: `gsettings get
    org.gnome.settings-daemon.plugins.media-keys mic-mute` is `@as []` while
    enabled, and restored after `gnome-extensions disable …`.
-8. In prefs, click the "Mute hotkey" row, press a new combination, and confirm it
+9. In prefs, click the "Mute hotkey" row, press a new combination, and confirm it
    captures and the new combo works without a shell restart (Backspace clears,
    Escape cancels).
-9. Check `journalctl -b /usr/bin/gnome-shell -p warning` for extension errors.
+10. Check `journalctl -b /usr/bin/gnome-shell -p warning` for extension errors.
 
 ## Files
 

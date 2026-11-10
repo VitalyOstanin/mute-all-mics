@@ -125,22 +125,46 @@ export default class MuteAllMicsExtension extends Extension {
 
   // --- Mute logic ----------------------------------------------------------
 
+  // Decided from the actual source state, not this._muted: other programs (a
+  // call client's mic button) change mute too, so the flag can be stale.
   _toggleMute() {
-    this._muted = !this._muted;
-    this._debug(`hotkey fired -> muted=${this._muted}`);
-    this._applyMuteToAll(this._muted).catch((e) =>
-      logError(e, "[mute-all-mics] applying mute failed"),
-    );
-    this._showOsd(this._muted).catch((e) =>
-      logError(e, "[mute-all-mics] showing OSD failed"),
+    this._toggleFromActualState().catch((e) =>
+      logError(e, "[mute-all-mics] toggling mute failed"),
     );
   }
 
-  async _applyMuteToAll(muted) {
+  async _toggleFromActualState() {
     const sources = await this._listRealSources();
+    const states = await this._readMuteStates(sources);
+    const known = states.filter((m) => m !== null);
+    const muted = known.length > 0 ? !known.every((m) => m) : !this._muted;
+    this._muted = muted;
+    this._debug(`hotkey fired: states=${JSON.stringify(states)} -> muted=${muted}`);
+    await Promise.all([
+      this._applyMuteTo(sources, muted),
+      this._showOsd(muted),
+    ]);
+  }
+
+  // Resolves with one entry per source: true/false, or null if unreadable.
+  async _readMuteStates(sources) {
+    const states = [];
+    for (const { name } of sources) {
+      const out = await this._runPactl(["get-source-mute", name]);
+      const m = out === null ? null : /:\s*(yes|no)\b/.exec(out);
+      states.push(m ? m[1] === "yes" : null);
+    }
+    return states;
+  }
+
+  async _applyMuteToAll(muted) {
+    await this._applyMuteTo(await this._listRealSources(), muted);
+  }
+
+  async _applyMuteTo(sources, muted) {
     this._debug(`applyMute(${muted}) sources=${JSON.stringify(sources)}`);
     let failed = 0;
-    for (const name of sources) {
+    for (const { name } of sources) {
       const r = await this._runPactl(["set-source-mute", name, muted ? "1" : "0"]);
       if (r === null) failed++;
     }
@@ -152,18 +176,20 @@ export default class MuteAllMicsExtension extends Extension {
       );
   }
 
+  // Resolves with [{ index, name }]; mute is applied by name (stable), the
+  // index only matches `pactl subscribe` events.
   async _listRealSources() {
     const out = await this._runPactl(["list", "short", "sources"]);
     if (!out) return [];
 
-    const names = [];
+    const sources = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
-      const name = line.split("\t")[1];
-      // Skip monitor sources (output loopbacks); names are stable, indices not.
-      if (name && !name.includes(".monitor")) names.push(name);
+      const [index, name] = line.split("\t");
+      // Skip monitor sources (output loopbacks).
+      if (name && !name.includes(".monitor")) sources.push({ index, name });
     }
-    return names;
+    return sources;
   }
 
   // Resolves with pactl's stdout, or null on failure. Never rejects.
@@ -171,10 +197,12 @@ export default class MuteAllMicsExtension extends Extension {
     return new Promise((resolve) => {
       let proc;
       try {
-        proc = Gio.Subprocess.new(
-          ["pactl", ...argv],
-          Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
-        );
+        // C locale: get-source-mute prints "Mute: yes|no" only untranslated.
+        const launcher = new Gio.SubprocessLauncher({
+          flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+        });
+        launcher.setenv("LC_ALL", "C", true);
+        proc = launcher.spawnv(["pactl", ...argv]);
       } catch (e) {
         logError(e, "[mute-all-mics] cannot spawn pactl (is it installed?)");
         resolve(null);
@@ -286,13 +314,25 @@ export default class MuteAllMicsExtension extends Extension {
 
   // Event lines look like: Event 'new' on source #62
   _handleEvent(line) {
-    if (!this._muted) return;
-    if (line.includes("'new'") && line.includes("on source")) {
-      this._debug(`new source while muted: ${line.trim()}`);
-      this._applyMuteToAll(true).catch((e) =>
-        logError(e, "[mute-all-mics] muting new source failed"),
-      );
-    }
+    const m = /'new' on source #(\d+)/.exec(line);
+    if (!m) return;
+    this._muteNewSourceIfAllMuted(m[1]).catch((e) =>
+      logError(e, "[mute-all-mics] muting new source failed"),
+    );
+  }
+
+  // A new microphone follows the others: muted if every other microphone is
+  // muted. Without other microphones the last known state decides.
+  async _muteNewSourceIfAllMuted(index) {
+    const sources = await this._listRealSources();
+    const added = sources.filter((s) => s.index === index);
+    if (added.length === 0) return; // a monitor source, or already gone
+    const states = await this._readMuteStates(sources.filter((s) => s.index !== index));
+    const known = states.filter((st) => st !== null);
+    const muted = known.length > 0 ? known.every((st) => st) : this._muted;
+    this._muted = muted;
+    this._debug(`new source #${index}: others=${JSON.stringify(states)} -> muted=${muted}`);
+    if (muted) await this._applyMuteTo(added, true);
   }
 
   _stopSourceWatch() {

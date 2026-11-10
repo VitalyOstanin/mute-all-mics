@@ -34,8 +34,8 @@ no built-in "mute all microphones" feature in PipeWire/WirePlumber or GNOME.
 - All microphones start muted whenever the extension is enabled (including every
   login), so nothing is live until you deliberately unmute.
 - Shows the native GNOME microphone OSD (the same popup the volume keys use).
-- While mute is active, a microphone that is plugged in or reconnected is muted
-  automatically.
+- A microphone that is plugged in or reconnected while all others are muted is
+  muted automatically.
 - The shortcut is set with an interactive key-capture picker, like the one in
   GNOME Settings (see [Settings](#settings)).
 - Disables GNOME's built-in mic-mute shortcut so a single combo does the right
@@ -102,12 +102,16 @@ the fallback if GNOME had no mic-mute shortcut. After that, your choice is kept.
 - Muting is done by shelling out to `pactl`: `pactl list short sources` is parsed
   (entries whose name ends in `.monitor` are skipped) and each remaining source
   gets `pactl set-source-mute <name> 1|0`.
+- Each press reads the actual mute state first: if any microphone is live, all
+  are muted; only when all are muted does the press unmute them. Mute changes
+  made by other programs (for example a call client's mic button) are therefore
+  honoured.
 - The OSD uses `Main.osdWindowManager` directly. Because the extension runs
   inside the gnome-shell process, this is the genuine OSD and is not subject to
   the D-Bus sender allow-list that blocks `org.gnome.Shell.ShowOSD` for external
   scripts.
-- Hot-plug handling follows `pactl subscribe`; on a `new` source event, if mute
-  is active, all sources are re-muted.
+- Hot-plug handling follows `pactl subscribe`; on a `new` source event the new
+  microphone is muted if all other microphones are muted.
 
 The rationale for each of these choices is recorded in [docs/ADR](docs/ADR).
 
@@ -132,6 +136,6 @@ GNOME 49, `show(-1, ...)` on GNOME 45-48.
 
 - "Real microphone" is decided by excluding `.monitor` sources; this matches the
   community convention but is a heuristic.
-- A microphone reconnected while muted is re-muted on its `new` event; transient
-  external `change` events that unmute a source are not mirrored (to avoid
-  feedback loops).
+- A microphone reconnected while the others are muted is muted on its `new`
+  event; transient external `change` events that unmute a source are not
+  mirrored (to avoid feedback loops).

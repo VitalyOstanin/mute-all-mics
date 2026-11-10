@@ -20,3 +20,4 @@
 | [0010](0010-start-muted-on-enable.md)           | Start muted on enable                                            |
 | [0011](0011-seed-hotkey-from-stock-mic-mute.md) | Seed the hotkey from the stock mic-mute on first run             |
 | [0012](0012-support-gnome-45-to-51.md)          | Support GNOME 45-51 by capability detection                      |
+| [0013](0013-toggle-from-actual-source-state.md) | Toggle from the actual source state, not an internal flag        |

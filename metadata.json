@@ -5,5 +5,5 @@
   "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
   "settings-schema": "org.gnome.shell.extensions.mute-all-mics",
   "url": "https://github.com/VitalyOstanin/mute-all-mics",
-  "version-name": "1.0"
+  "version-name": "1.1"
 }

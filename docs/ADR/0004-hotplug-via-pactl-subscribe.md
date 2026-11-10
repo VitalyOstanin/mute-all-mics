@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted. Hot-plug criterion amended by
+[0013](0013-toggle-from-actual-source-state.md).
 
 ## Context
 
