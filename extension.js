@@ -337,11 +337,7 @@ export default class MuteAllMicsExtension extends Extension {
 
   _stopSourceWatch() {
     if (this._subscribeProc) {
-      try {
-        this._subscribeProc.force_exit();
-      } catch {
-        // Already gone.
-      }
+      this._subscribeProc.force_exit();
       this._subscribeProc = null;
     }
     this._subscribeStream = null;
